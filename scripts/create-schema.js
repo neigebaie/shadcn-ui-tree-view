@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 try {
   const content = await fs.promises.readFile(
-    path.join(__dirname, "../src/tree-view.tsx"),
+    path.join(__dirname, "../components/tree-view.tsx"),
     "utf8"
   );
 
