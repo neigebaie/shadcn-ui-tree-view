@@ -32,7 +32,7 @@ try {
   };
 
   await fs.promises.writeFile(
-    path.join(__dirname, "./schema.json"),
+    path.join(__dirname, "../schema.json"),
     JSON.stringify(schema, null, 2)
   );
 
