@@ -1,7 +1,11 @@
 {
-  "name": "tree-view",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@neigebaie/tree-view",
+  "version": "1.0.0",
+  "description": "A selectable tree view component for React",
+  "author": "neigebaie",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -9,19 +13,30 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-checkbox": "^1.1.3",
+    "@radix-ui/react-collapsible": "^1.1.2",
+    "@radix-ui/react-context-menu": "^2.2.5",
+    "@radix-ui/react-hover-card": "^1.1.5",
+    "@radix-ui/react-slot": "^1.1.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.0.6",
+    "lucide-react": "^0.474.0",
+    "next": "15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.1.0"
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "eslint": "^9",
+    "@eslint/eslintrc": "^3.2.0",
+    "@types/node": "^20.17.16",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "eslint": "^9.19.0",
     "eslint-config-next": "15.1.0",
-    "@eslint/eslintrc": "^3"
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
   }
 }

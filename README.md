@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Interactive Tree View Demo
 
-## Getting Started
+Custom shadcn/ui tree view component with selection, folder management, and visual feedback.
 
-First, run the development server:
+![screenshot](./screenshot.png)
+
+
+## Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx shadcn add "https://github.com/neigebaie/shadcn-ui-tree-view/releases/download/v1.0.0/schema.json"
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Usage
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### TreeViewItem
+```tsx
+interface TreeViewItem {
+  id: string;
+  name: string;
+  type: string;
+  children?: TreeViewItem[];
+}
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### TreeViewProps
+```tsx
+interface TreeViewProps {
+  data: TreeViewItem[];
+  title?: string;
+  showExpandAll?: boolean;
+  showSelectionDetails?: boolean;
+  getIcon?: (item: TreeViewItem, depth: number) => React.ReactNode;
+  onSelectionChange?: (selectedItems: TreeViewItem[]) => void;
+  onAction?: (action: string, item: TreeViewItem) => void;
+}
+```
+## Example
 
-## Learn More
+```tsx
+import { TreeView, TreeViewItem } from "@/components/ui/tree-view";
 
-To learn more about Next.js, take a look at the following resources:
+const test_data: TreeViewItem[] = [
+  {
+    id: "1",
+    name: "Folder 1",
+    type: "folder",
+    children: [
+      {
+        id: "1.1", 
+        name: "File 1.1", 
+        type: "file"
+      },
+      {
+        id: "1.2", 
+        name: "File 1.2", 
+        type: "file"
+      },
+    ],
+  },
+  {
+    id: "2",
+    name: "Folder 2",
+    type: "folder",
+    children: [],
+  },
+];
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+export default function Test() {
+  return <TreeView data={test_data} />;
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Features
 
-## Deploy on Vercel
+- [X] Selection capabilities (single click, range, multi-select, drag select)
+- [X] Folder management system with expand/collapse and item counting for collapsed folders
+- [X] Visual feedback system with animations and level-specific icons
+- [X] Context menu with file/folder specific actions
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.

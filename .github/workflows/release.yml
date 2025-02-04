@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Extract package version
+        run: echo "PACKAGE_VERSION=$(pnpm pkg get version | sed 's/"//g')" >> "$GITHUB_ENV"
+
+      - name: Get release (if exists)
+        id: getRelease
+        uses: cardinalby/git-get-release-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          doNotFailIfNotFound: true
+          releaseName: "v${{ env.PACKAGE_VERSION }}"
+
+      - name: Fail on duplicate release
+        run: |
+          if [ -n "${{ steps.getRelease.outputs.id}}" ]; then
+            echo "Release already exists"
+            exit 1
+          fi
+
+      - name: Create schema.json
+        run: node scripts/create-schema.ts
+
+      - name: Upload schema.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema.json
+          path: schema.json
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ env.PACKAGE_VERSION }}"
+          tag_name: "v${{ env.PACKAGE_VERSION }}"
+          files: schema.json
+          fail_on_unmatched_files: true
+          make_latest: true
