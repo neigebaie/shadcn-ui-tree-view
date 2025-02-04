@@ -46,7 +46,6 @@ export interface TreeViewProps {
   data: TreeViewItem[];
   title?: string;
   showExpandAll?: boolean;
-  showSelectionDetails?: boolean;
   getIcon?: (item: TreeViewItem, depth: number) => React.ReactNode;
   onSelectionChange?: (selectedItems: TreeViewItem[]) => void;
   onAction?: (action: string, item: TreeViewItem) => void;
@@ -471,7 +470,6 @@ export default function TreeView({
   data,
   title = "Tree View",
   showExpandAll = true,
-  showSelectionDetails = true,
   getIcon,
   onSelectionChange,
   onAction,
@@ -569,7 +567,10 @@ export default function TreeView({
     const findSelectedItems = (items: TreeViewItem[]) => {
       items.forEach((item) => {
         if (selectedIds.has(item.id)) {
-          selectedItems.push(item);
+          // Create a new object without children
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { children, ...itemWithoutChildren } = item;
+          selectedItems.push(itemWithoutChildren);
         }
         if (item.children) {
           findSelectedItems(item.children);
@@ -580,8 +581,6 @@ export default function TreeView({
     findSelectedItems(data);
     return selectedItems;
   }, [data, selectedIds]);
-
-  const selectedItems = getSelectedItems();
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Only track on left click and not on buttons
@@ -774,21 +773,6 @@ export default function TreeView({
           ))}
         </div>
       </div>
-
-      {showSelectionDetails && (
-        <div className="bg-background p-6 rounded-xl border w-[400px] space-y-4">
-          <h2 className="text-xl font-semibold">Selection Details</h2>
-          <div className="border rounded-lg p-4 bg-card font-mono text-sm">
-            {selectedItems.length > 0 ? (
-              <pre className="whitespace-pre-wrap break-all">
-                {JSON.stringify(selectedItems, null, 2)}
-              </pre>
-            ) : (
-              <div className="text-muted-foreground">No items selected</div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
