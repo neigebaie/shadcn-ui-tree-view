@@ -13,9 +13,24 @@ try {
   const schema = {
     name: "tree-view",
     type: "registry:block",
-    dependencies: ["@radix-ui/react-accordion", "class-variance-authority"],
+    dependencies: [
+      "@radix-ui/react-accordion",
+      "@radix-ui/react-context-menu",
+      "@radix-ui/react-collapsible",
+      "@radix-ui/react-hover-card",
+      "class-variance-authority",
+      "framer-motion",
+      "lucide-react"
+    ],
     devDependencies: [],
-    registryDependencies: [],
+    registryDependencies: [
+      "button",
+      "badge",
+      "input",
+      "context-menu",
+      "collapsible",
+      "hover-card"
+    ],
     files: [
       {
         path: "components/tree-view.tsx",
@@ -23,7 +38,10 @@ try {
         content,
       },
     ],
-    tailwind: {},
+    tailwind: {
+      cssVariables: true,
+      animations: true,
+    },
     cssVars: {},
     meta: {
       importSpecifier: "TreeView",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -11,21 +11,17 @@ import {
   Folder,
   ChevronRight,
   ChevronDown,
-  Server,
-  Database,
-  Home,
-  Waves,
-  Wind,
+  Box,
+  Search,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Copy, Trash, FolderOpen, FileEdit, Share2 } from "lucide-react";
+import { X, Share2 } from "lucide-react";
 import {
   HoverCard,
   HoverCardContent,
@@ -33,22 +29,47 @@ import {
 } from "@/components/ui/hover-card";
 import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { test_data } from "@/lib/demo_data";
+import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 export interface TreeViewItem {
   id: string;
   name: string;
   type: string;
   children?: TreeViewItem[];
+  checked?: boolean;
+}
+
+export interface TreeViewIconMap {
+  [key: string]: React.ReactNode | undefined;
+}
+
+export interface TreeViewMenuItem {
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+  action: (items: TreeViewItem[]) => void;
 }
 
 export interface TreeViewProps {
+  className?: string;
   data: TreeViewItem[];
   title?: string;
   showExpandAll?: boolean;
+  showCheckboxes?: boolean;
+  checkboxPosition?: "left" | "right";
+  searchPlaceholder?: string;
+  selectionText?: string;
+  checkboxLabels?: {
+    check: string;
+    uncheck: string;
+  };
   getIcon?: (item: TreeViewItem, depth: number) => React.ReactNode;
   onSelectionChange?: (selectedItems: TreeViewItem[]) => void;
-  onAction?: (action: string, item: TreeViewItem) => void;
+  onAction?: (action: string, items: TreeViewItem[]) => void;
+  onCheckChange?: (item: TreeViewItem, checked: boolean) => void;
+  iconMap?: TreeViewIconMap;
+  menuItems?: TreeViewMenuItem[];
 }
 
 interface TreeItemProps {
@@ -60,8 +81,71 @@ interface TreeItemProps {
   expandedIds: Set<string>;
   onToggleExpand: (id: string, isOpen: boolean) => void;
   getIcon?: (item: TreeViewItem, depth: number) => React.ReactNode;
-  onAction?: (action: string, item: TreeViewItem) => void;
+  onAction?: (action: string, items: TreeViewItem[]) => void;
+  onAccessChange?: (item: TreeViewItem, hasAccess: boolean) => void;
+  allItems: TreeViewItem[];
+  showAccessRights?: boolean;
+  itemMap: Map<string, TreeViewItem>;
+  iconMap?: TreeViewIconMap;
+  menuItems?: TreeViewMenuItem[];
+  getSelectedItems: () => TreeViewItem[];
 }
+
+// Helper function to build a map of all items by ID
+const buildItemMap = (items: TreeViewItem[]): Map<string, TreeViewItem> => {
+  const map = new Map<string, TreeViewItem>();
+  const processItem = (item: TreeViewItem) => {
+    map.set(item.id, item);
+    item.children?.forEach(processItem);
+  };
+  items.forEach(processItem);
+  return map;
+};
+
+// Update the getCheckState function to work bottom-up
+const getCheckState = (
+  item: TreeViewItem,
+  itemMap: Map<string, TreeViewItem>
+): "checked" | "unchecked" | "indeterminate" => {
+  // Get the original item from the map
+  const originalItem = itemMap.get(item.id);
+  if (!originalItem) return "unchecked";
+
+  // If it's a leaf node (no children), return its check state
+  if (!originalItem.children || originalItem.children.length === 0) {
+    return originalItem.checked ? "checked" : "unchecked";
+  }
+
+  // Count the check states of immediate children
+  let checkedCount = 0;
+  let indeterminateCount = 0;
+
+  originalItem.children.forEach(child => {
+    const childState = getCheckState(child, itemMap);
+    if (childState === "checked") checkedCount++;
+    if (childState === "indeterminate") indeterminateCount++;
+  });
+
+  // Calculate parent state based on children states
+  const totalChildren = originalItem.children.length;
+
+  // If all children are checked
+  if (checkedCount === totalChildren) {
+    return "checked";
+  }
+  // If any child is checked or indeterminate
+  if (checkedCount > 0 || indeterminateCount > 0) {
+    return "indeterminate";
+  }
+  // If no children are checked or indeterminate
+  return "unchecked";
+};
+
+// Add this default icon map
+const defaultIconMap: TreeViewIconMap = {
+  file: <Box className="h-4 w-4 text-red-600" />,
+  folder: <Folder className="h-4 w-4 text-primary/80" />,
+};
 
 function TreeItem({
   item,
@@ -73,7 +157,14 @@ function TreeItem({
   onToggleExpand,
   getIcon,
   onAction,
-}: TreeItemProps) {
+  onAccessChange,
+  allItems,
+  showAccessRights,
+  itemMap,
+  iconMap = defaultIconMap,
+  menuItems,
+  getSelectedItems,
+}: TreeItemProps): JSX.Element {
   const isOpen = expandedIds.has(item.id);
   const isSelected = selectedIds.has(item.id);
   const itemRef = useRef<HTMLDivElement>(null);
@@ -86,11 +177,7 @@ function TreeItem({
 
       items.forEach((item) => {
         visibleItems.push(item);
-        if (
-          item.type === "folder" &&
-          expandedIds.has(item.id) &&
-          item.children
-        ) {
+        if (item.children && expandedIds.has(item.id)) {
           visibleItems = [...visibleItems, ...getVisibleItems(item.children)];
         }
       });
@@ -106,7 +193,8 @@ function TreeItem({
       return;
     }
 
-    const visibleItems = getVisibleItems(test_data);
+    // Get all visible items from the entire tree
+    const visibleItems = getVisibleItems(allItems);
     const currentIndex = visibleItems.findIndex((i) => i.id === item.id);
 
     const prevItem = visibleItems[currentIndex - 1];
@@ -121,7 +209,14 @@ function TreeItem({
     setSelectionStyle(
       `${roundTop ? "rounded-t-md" : ""} ${roundBottom ? "rounded-b-md" : ""}`
     );
-  }, [isSelected, selectedIds, expandedIds, item.id, getVisibleItems]);
+  }, [
+    isSelected,
+    selectedIds,
+    expandedIds,
+    item.id,
+    getVisibleItems,
+    allItems,
+  ]);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -162,7 +257,7 @@ function TreeItem({
     } else {
       newSelection = new Set([item.id]);
       // Open folder on single click if it's a folder
-      if (item.type === "folder" && isSelected) {
+      if (item.children && isSelected) {
         onToggleExpand(item.id, !isOpen);
       }
     }
@@ -173,9 +268,35 @@ function TreeItem({
 
   const handleAction = (action: string) => {
     if (onAction) {
-      onAction(action, item);
-    } else {
-      console.log(`${action} on:`, item.name);
+      // Get all selected items, or just this item if none selected
+      const selectedItems =
+        selectedIds.size > 0
+          ? allItems
+              .flatMap((item) => getAllDescendants(item))
+              .filter((item) => selectedIds.has(item.id))
+          : [item];
+      onAction(action, selectedItems);
+    }
+  };
+
+  // Helper function to get all descendants of an item (including the item itself)
+  const getAllDescendants = (item: TreeViewItem): TreeViewItem[] => {
+    const descendants = [item];
+    if (item.children) {
+      item.children.forEach((child) => {
+        descendants.push(...getAllDescendants(child));
+      });
+    }
+    return descendants;
+  };
+
+  const handleAccessClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onAccessChange) {
+      const currentState = getCheckState(item, itemMap);
+      // Toggle between checked and unchecked, treating indeterminate as unchecked
+      const newChecked = currentState === "checked" ? false : true;
+      onAccessChange(item, newChecked);
     }
   };
 
@@ -184,25 +305,8 @@ function TreeItem({
       return getIcon(item, depth);
     }
 
-    // Default icon logic
-    if (item.type === "file") {
-      return item.id.startsWith("wm") ? (
-        <Waves className="h-4 w-4 text-blue-600" />
-      ) : (
-        <Wind className="h-4 w-4 text-orange-600" />
-      );
-    }
-
-    switch (depth) {
-      case 0:
-        return <Server className="h-4 w-4 text-purple-600" />;
-      case 1:
-        return <Database className="h-4 w-4 text-green-600" />;
-      case 2:
-        return <Home className="h-4 w-4 text-yellow-600" />;
-      default:
-        return <Folder className="h-4 w-4 text-primary/80" />;
-    }
+    // Use the provided iconMap or fall back to default
+    return iconMap[item.type] || iconMap.folder || defaultIconMap.folder;
   };
 
   const getItemPath = (item: TreeViewItem, items: TreeViewItem[]): string => {
@@ -240,7 +344,7 @@ function TreeItem({
       if (selectedIds.has(child.id)) {
         count++;
       }
-      if (child.type === "folder") {
+      if (child.children) {
         count += getSelectedChildrenCount(child);
       }
     });
@@ -248,10 +352,9 @@ function TreeItem({
     return count;
   };
 
-  // Get selected count only if folder is collapsed and has selected children
+  // Get selected count only if item has children and is collapsed
   const selectedCount =
-    (item.type === "folder" && !isOpen && getSelectedChildrenCount(item)) ||
-    null;
+    (item.children && !isOpen && getSelectedChildrenCount(item)) || null;
 
   return (
     <ContextMenu>
@@ -262,15 +365,15 @@ function TreeItem({
             data-tree-item
             data-id={item.id}
             data-depth={depth}
-            data-folder-closed={item.type === "folder" && !isOpen}
+            data-folder-closed={item.children && !isOpen}
             className={`select-none cursor-pointer ${
-              isSelected ? `bg-blue-100 ${selectionStyle}` : "text-foreground"
+              isSelected ? `bg-orange-100 ${selectionStyle}` : "text-foreground"
             } px-1`}
             style={{ paddingLeft: `${depth * 20}px` }}
             onClick={handleClick}
           >
             <div className="flex items-center h-8">
-              {item.type === "folder" ? (
+              {item.children ? (
                 <div className="flex items-center gap-2 flex-1 group">
                   <Collapsible
                     open={isOpen}
@@ -291,6 +394,38 @@ function TreeItem({
                       </Button>
                     </CollapsibleTrigger>
                   </Collapsible>
+                  {showAccessRights && (
+                    <div
+                      className="relative flex items-center justify-center w-4 h-4 cursor-pointer hover:opacity-80"
+                      onClick={handleAccessClick}
+                    >
+                      {getCheckState(item, itemMap) === "checked" && (
+                        <div className="w-4 h-4 border rounded bg-primary border-primary flex items-center justify-center">
+                          <svg
+                            className="h-3 w-3 text-primary-foreground"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                      {getCheckState(item, itemMap) === "unchecked" && (
+                        <div className="w-4 h-4 border rounded border-input" />
+                      )}
+                      {getCheckState(item, itemMap) === "indeterminate" && (
+                        <div className="w-4 h-4 border rounded bg-primary border-primary flex items-center justify-center">
+                          <div className="h-0.5 w-2 bg-primary-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {renderIcon()}
                   <span className="flex-1">{item.name}</span>
                   {selectedCount !== null && selectedCount > 0 && (
@@ -318,14 +453,15 @@ function TreeItem({
                         <div className="text-sm text-muted-foreground space-y-1">
                           <div>
                             <span className="font-medium">Type:</span>{" "}
-                            {item.type}
+                            {item.type.charAt(0).toUpperCase() +
+                              item.type.slice(1).replace("_", " ")}
                           </div>
                           <div>
                             <span className="font-medium">ID:</span> {item.id}
                           </div>
                           <div>
                             <span className="font-medium">Location:</span>{" "}
-                            {getItemPath(item, test_data)}
+                            {getItemPath(item, allItems)}
                           </div>
                           <div>
                             <span className="font-medium">Items:</span>{" "}
@@ -338,6 +474,32 @@ function TreeItem({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-1 pl-8 group">
+                  {showAccessRights && (
+                    <div
+                      className="relative flex items-center justify-center w-4 h-4 cursor-pointer hover:opacity-80"
+                      onClick={handleAccessClick}
+                    >
+                      {item.checked ? (
+                        <div className="w-4 h-4 border rounded bg-primary border-primary flex items-center justify-center">
+                          <svg
+                            className="h-3 w-3 text-primary-foreground"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 border rounded border-input" />
+                      )}
+                    </div>
+                  )}
                   {renderIcon()}
                   <span className="flex-1">{item.name}</span>
                   <HoverCard>
@@ -357,16 +519,15 @@ function TreeItem({
                         <div className="text-sm text-muted-foreground space-y-1">
                           <div>
                             <span className="font-medium">Type:</span>{" "}
-                            {item.id.startsWith("wm")
-                              ? "Washing Machine"
-                              : "Dryer"}
+                            {item.type.charAt(0).toUpperCase() +
+                              item.type.slice(1).replace("_", " ")}
                           </div>
                           <div>
                             <span className="font-medium">ID:</span> {item.id}
                           </div>
                           <div>
                             <span className="font-medium">Location:</span>{" "}
-                            {getItemPath(item, test_data)}
+                            {getItemPath(item, allItems)}
                           </div>
                         </div>
                       </div>
@@ -377,7 +538,7 @@ function TreeItem({
             </div>
           </div>
 
-          {item.type === "folder" && (
+          {item.children && (
             <Collapsible
               open={isOpen}
               onOpenChange={(open) => onToggleExpand(item.id, open)}
@@ -403,6 +564,13 @@ function TreeItem({
                           onToggleExpand={onToggleExpand}
                           getIcon={getIcon}
                           onAction={onAction}
+                          onAccessChange={onAccessChange}
+                          allItems={allItems}
+                          showAccessRights={showAccessRights}
+                          itemMap={itemMap}
+                          iconMap={iconMap}
+                          menuItems={menuItems}
+                          getSelectedItems={getSelectedItems}
                         />
                       ))}
                     </motion.div>
@@ -414,86 +582,132 @@ function TreeItem({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-64">
-        {item.type === "folder" ? (
-          <>
-            <ContextMenuItem onClick={() => handleAction("open")}>
-              <FolderOpen className="mr-2 h-4 w-4" />
-              Open
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => handleAction("share")}>
-              <Share2 className="mr-2 h-4 w-4" />
-              Share
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => handleAction("copy")}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => handleAction("delete")}
-              className="text-red-600"
-            >
-              <Trash className="mr-2 h-4 w-4" />
-              Delete
-            </ContextMenuItem>
-          </>
-        ) : (
-          <>
-            <ContextMenuItem onClick={() => handleAction("open")}>
-              <FileEdit className="mr-2 h-4 w-4" />
-              Open
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => handleAction("share")}>
-              <Share2 className="mr-2 h-4 w-4" />
-              Share
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => handleAction("copy")}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => handleAction("delete")}
-              className="text-red-600"
-            >
-              <Trash className="mr-2 h-4 w-4" />
-              Delete
-            </ContextMenuItem>
-          </>
-        )}
+        {menuItems?.map((menuItem) => (
+          <ContextMenuItem
+            key={menuItem.id}
+            onClick={() => {
+              const items = selectedIds.has(item.id)
+                ? getSelectedItems()
+                : [item];
+              menuItem.action(items);
+            }}
+          >
+            {menuItem.icon && (
+              <span className="mr-2 h-4 w-4">{menuItem.icon}</span>
+            )}
+            {menuItem.label}
+          </ContextMenuItem>
+        ))}
       </ContextMenuContent>
     </ContextMenu>
   );
 }
 
 export default function TreeView({
+  className,
+  checkboxLabels = {
+    check: "Check",
+    uncheck: "Uncheck",
+  },
   data,
-  title = "Tree View",
+  iconMap,
+  searchPlaceholder = "Search...",
+  selectionText = "selected",
   showExpandAll = true,
+  showCheckboxes = false,
   getIcon,
   onSelectionChange,
   onAction,
+  onCheckChange,
+  menuItems,
 }: TreeViewProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const lastSelectedId = useRef<string | null>(null);
-  const treeRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [currentMousePos, setCurrentMousePos] = useState<number>(0);
   const [dragStart, setDragStart] = useState<number | null>(null);
-  const dragRef = useRef<HTMLDivElement>(null);
   const [dragStartPosition, setDragStartPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const dragRef = useRef<HTMLDivElement>(null);
+  const lastSelectedId = useRef<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+
   const DRAG_THRESHOLD = 10; // pixels
-  const [currentMousePos, setCurrentMousePos] = useState<number>(0);
+
+  // Create a map of all items by ID
+  const itemMap = useMemo(() => buildItemMap(data), [data]);
+
+  // Memoize the search results and expanded IDs
+  const { filteredData, searchExpandedIds } = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return { filteredData: data, searchExpandedIds: new Set<string>() };
+    }
+
+    const searchLower = searchQuery.toLowerCase();
+    const newExpandedIds = new Set<string>();
+
+    // Helper function to check if an item or its descendants match the search
+    const itemMatches = (item: TreeViewItem): boolean => {
+      const nameMatches = item.name.toLowerCase().includes(searchLower);
+      if (nameMatches) return true;
+
+      if (item.children) {
+        return item.children.some((child) => itemMatches(child));
+      }
+
+      return false;
+    };
+
+    // Helper function to filter tree while keeping parent structure
+    const filterTree = (items: TreeViewItem[]): TreeViewItem[] => {
+      return items
+        .map((item) => {
+          if (!item.children) {
+            return itemMatches(item) ? item : null;
+          }
+
+          const filteredChildren = filterTree(item.children);
+          if (filteredChildren.length > 0 || itemMatches(item)) {
+            if (item.children) {
+              newExpandedIds.add(item.id);
+            }
+            return {
+              ...item,
+              children: filteredChildren,
+            };
+          }
+          return null;
+        })
+        .filter((item): item is TreeViewItem => item !== null);
+    };
+
+    return {
+      filteredData: filterTree(data),
+      searchExpandedIds: newExpandedIds,
+    };
+  }, [data, searchQuery]);
+
+  // Update expanded IDs when search changes
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      setExpandedIds(prev => new Set([...prev, ...searchExpandedIds]));
+    }
+  }, [searchExpandedIds, searchQuery]);
 
   useEffect(() => {
     const handleClickAway = (e: MouseEvent) => {
-      const target = e.target as Node;
+      const target = e.target as Element;
+
       const clickedInside =
         (treeRef.current && treeRef.current.contains(target)) ||
-        (dragRef.current && dragRef.current.contains(target));
+        (dragRef.current && dragRef.current.contains(target)) ||
+        // Ignore clicks on context menus
+        target.closest('[role="menu"]') ||
+        target.closest("[data-radix-popper-content-wrapper]");
 
       if (!clickedInside) {
         setSelectedIds(new Set());
@@ -505,39 +719,13 @@ export default function TreeView({
     return () => document.removeEventListener("mousedown", handleClickAway);
   }, []);
 
-  // Calculate selected items count
-  const getSelectionCounts = () => {
-    const counts = { files: 0, folders: 0 };
-
-    const countItem = (item: TreeViewItem) => {
-      if (selectedIds.has(item.id)) {
-        if (item.type === "folder") {
-          counts.folders++;
-        } else {
-          counts.files++;
-        }
-      }
-
-      if (item.children) {
-        item.children.forEach(countItem);
-      }
-    };
-
-    data.forEach(countItem);
-    return counts;
-  };
-
-  const { files, folders } = getSelectionCounts();
-
   // Function to collect all folder IDs
   const getAllFolderIds = (items: TreeViewItem[]): string[] => {
     let ids: string[] = [];
     items.forEach((item) => {
-      if (item.type === "folder") {
+      if (item.children) {
         ids.push(item.id);
-        if (item.children) {
-          ids = [...ids, ...getAllFolderIds(item.children)];
-        }
+        ids = [...ids, ...getAllFolderIds(item.children)];
       }
     });
     return ids;
@@ -561,26 +749,40 @@ export default function TreeView({
     setExpandedIds(newExpandedIds);
   };
 
+  // Get selected items
   const getSelectedItems = useCallback((): TreeViewItem[] => {
-    const selectedItems: TreeViewItem[] = [];
-
-    const findSelectedItems = (items: TreeViewItem[]) => {
-      items.forEach((item) => {
-        if (selectedIds.has(item.id)) {
-          // Create a new object without children
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { children, ...itemWithoutChildren } = item;
-          selectedItems.push(itemWithoutChildren);
-        }
-        if (item.children) {
-          findSelectedItems(item.children);
-        }
-      });
+    const items: TreeViewItem[] = [];
+    const processItem = (item: TreeViewItem) => {
+      if (selectedIds.has(item.id)) {
+        items.push(item);
+      }
+      item.children?.forEach(processItem);
     };
+    data.forEach(processItem);
+    return items;
+  }, [selectedIds, data]);
 
-    findSelectedItems(data);
-    return selectedItems;
-  }, [data, selectedIds]);
+  // Get selected items, filtering out parents if their children are selected
+  const getEffectiveSelectedItems = useCallback((): TreeViewItem[] => {
+    const selectedItems = getSelectedItems();
+
+    // Build a set of all selected IDs for quick lookup
+    const selectedIdsSet = new Set(selectedItems.map((item) => item.id));
+
+    // Filter out parents whose children are also selected
+    return selectedItems.filter((item) => {
+      // If this item has no children, always include it
+      if (!item.children) return true;
+
+      // Check if any children of this item are selected
+      const hasSelectedChildren = item.children.some((child) =>
+        selectedIdsSet.has(child.id)
+      );
+
+      // Only include this item if none of its children are selected
+      return !hasSelectedChildren;
+    });
+  }, [getSelectedItems]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Only track on left click and not on buttons
@@ -694,53 +896,113 @@ export default function TreeView({
     <div className="flex gap-4">
       <div
         ref={treeRef}
-        className="bg-background p-6 rounded-xl border max-w-2xl space-y-4 w-[600px]"
+        className="bg-background p-6 rounded-xl border max-w-2xl space-y-4 w-[600px] relative shadow-lg"
       >
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h2 className="text-xl font-semibold">{title}</h2>
-            {showExpandAll && (
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={handleExpandAll}
-                >
-                  <ChevronDown className="h-4 w-4 mr-1" />
-                  Expand All
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={handleCollapseAll}
-                >
-                  <ChevronRight className="h-4 w-4 mr-1" />
-                  Collapse All
-                </Button>
+        <AnimatePresence mode="wait">
+          {selectedIds.size > 0 ? (
+            <motion.div
+              key="selection"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="h-10 flex items-center justify-between bg-background rounded-lg border px-4"
+            >
+              <div
+                className="font-medium cursor-pointer flex items-center"
+                title="Clear selection"
+                onClick={() => {
+                  setSelectedIds(new Set());
+                  lastSelectedId.current = null;
+                }}
+              >
+                <X className="h-4 w-4 mr-2" />
+                {selectedIds.size} {selectionText}
               </div>
-            )}
-          </div>
-          {(files > 0 || folders > 0) && (
-            <div className="text-sm text-muted-foreground space-x-2">
-              {folders > 0 && (
-                <span>
-                  {folders} folder{folders !== 1 ? "s" : ""}
-                </span>
+
+              {showCheckboxes && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const effectiveItems = getEffectiveSelectedItems();
+                      const processItem = (item: TreeViewItem) => {
+                        onCheckChange?.(item, true);
+                        item.children?.forEach(processItem);
+                      };
+                      effectiveItems.forEach(processItem);
+                    }}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                  >
+                    {checkboxLabels.check}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const effectiveItems = getEffectiveSelectedItems();
+                      const processItem = (item: TreeViewItem) => {
+                        onCheckChange?.(item, false);
+                        item.children?.forEach(processItem);
+                      };
+                      effectiveItems.forEach(processItem);
+                    }}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    {checkboxLabels.uncheck}
+                  </Button>
+                </div>
               )}
-              {files > 0 && folders > 0 && <span>·</span>}
-              {files > 0 && (
-                <span>
-                  {files} file{files !== 1 ? "s" : ""}
-                </span>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="search"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="h-10 flex items-center gap-2"
+            >
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-10 pl-9"
+                />
+              </div>
+              {showExpandAll && (
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-10 px-2"
+                    onClick={handleExpandAll}
+                  >
+                    <ChevronDown className="h-4 w-4 mr-1" />
+                    Expand All
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-10 px-2"
+                    onClick={handleCollapseAll}
+                  >
+                    <ChevronRight className="h-4 w-4 mr-1" />
+                    Collapse All
+                  </Button>
+                </div>
               )}
-            </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
+
         <div
           ref={dragRef}
-          className="border rounded-lg p-4 bg-card relative select-none"
+          className={cn(
+            "rounded-lg bg-card relative select-none",
+            className
+          )}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
         >
@@ -758,7 +1020,7 @@ export default function TreeView({
               }}
             />
           )}
-          {data.map((item) => (
+          {filteredData.map((item) => (
             <TreeItem
               key={item.id}
               item={item}
@@ -769,6 +1031,13 @@ export default function TreeView({
               onToggleExpand={handleToggleExpand}
               getIcon={getIcon}
               onAction={onAction}
+              onAccessChange={onCheckChange}
+              allItems={data}
+              showAccessRights={showCheckboxes}
+              itemMap={itemMap}
+              iconMap={iconMap}
+              menuItems={menuItems}
+              getSelectedItems={getSelectedItems}
             />
           ))}
         </div>
