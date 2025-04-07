@@ -13,17 +13,17 @@ npm install framer-motion @radix-ui/react-context-menu @radix-ui/react-collapsib
 
 2. Install required shadcn/ui components:
 ```bash
-npx shadcn-ui@latest add button
-npx shadcn-ui@latest add badge
-npx shadcn-ui@latest add input
-npx shadcn-ui@latest add context-menu
-npx shadcn-ui@latest add collapsible
-npx shadcn-ui@latest add hover-card
+npx shadcn@latest add button
+npx shadcn@latest add badge
+npx shadcn@latest add input
+npx shadcn@latest add context-menu
+npx shadcn@latest add collapsible
+npx shadcn@latest add hover-card
 ```
 
 3. Install the tree view component:
 ```bash
-npx shadcn-ui@latest add "https://github.com/neigebaie/shadcn-ui-tree-view/releases/download/v1.1.0/schema.json"
+npx shadcn@latest add "https://github.com/neigebaie/shadcn-ui-tree-view/releases/download/v1.1.0/schema.json"
 ```
 
 ## Usage
@@ -65,7 +65,7 @@ interface TreeViewMenuItem {
 ## Example
 
 ```tsx
-import { TreeView } from "@/components/ui/tree-view";
+import { TreeView } from "@/components/tree-view";
 import { Globe, Folder, FolderOpen, File } from "lucide-react";
 
 const data = [
